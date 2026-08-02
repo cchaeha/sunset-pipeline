@@ -45,6 +45,17 @@ message("-- ingest (", INGEST_DAYS, " days x ", length(SUNSET_SENSORS), " sensor
 ing <- ingest_quantaq(con, days = INGEST_DAYS)
 message(sprintf("   rows upserted: %s   failed sensor-days: %d", ing$rows, ing$failures))
 
+# Fail loudly on a total ingest failure. A run that collects nothing but exits 0
+# is the worst outcome available: CI goes green, the artifacts quietly go stale,
+# and nobody looks. This happened on 2026-08-02 — every sensor-day failed on a
+# missing jsonlite and the workflow still reported success.
+attempted <- length(SUNSET_SENSORS) * INGEST_DAYS
+if (ing$rows == 0 && ing$failures > 0)
+  stop(sprintf("ingest collected NOTHING (%d/%d sensor-days failed) - see [FAIL] lines above",
+               ing$failures, attempted))
+if (ing$failures > attempted / 2)
+  warning(sprintf("ingest degraded: %d/%d sensor-days failed", ing$failures, attempted))
+
 message("-- hourly + QC")
 qc <- build_hourly(con)
 print(qc)

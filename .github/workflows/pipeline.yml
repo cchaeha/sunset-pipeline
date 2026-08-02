@@ -53,7 +53,11 @@ jobs:
         env:
           GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          install.packages(c("DBI", "duckdb", "remotes"))
+          # jsonlite is a TRANSITIVE dependency of the QuantAQ client that is
+          # not pulled in automatically; without it every API call fails with
+          # 'The package "jsonlite" is required.' Listed explicitly rather than
+          # relying on another package to drag it in.
+          install.packages(c("DBI", "duckdb", "remotes", "jsonlite", "httr2"))
           remotes::install_github("quant-aq/r-quantaq", upgrade = "never")
         shell: Rscript {0}
 
