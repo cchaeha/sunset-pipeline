@@ -55,11 +55,15 @@ ingest_quantaq <- function(con, days = INGEST_DAYS) {
     )
   }
 
+  # Report the LAST error rather than swallowing it. The first CI run failed all
+  # 60 sensor-days and produced no clue why, because this returned a bare NULL.
+  # A retry loop that hides the reason is worse than no retry loop.
+  last_err <- NULL
   pull_day <- function(sensor, date, retries = 3) {
     for (a in seq_len(retries)) {
       res <- tryCatch(
         QuantAQAPIClient::get_data_by_date(sn = sensor, date = as.character(date)),
-        error = function(e) { Sys.sleep(2 * a); NULL })
+        error = function(e) { last_err <<- conditionMessage(e); Sys.sleep(2 * a); NULL })
       if (!is.null(res)) return(res)
     }
     NULL
@@ -72,7 +76,8 @@ ingest_quantaq <- function(con, days = INGEST_DAYS) {
       recs <- pull_day(sn, d)
       if (is.null(recs)) {
         n_fail <- n_fail + 1L
-        message(sprintf("  [FAIL] %s %s", sn, d))
+        message(sprintf("  [FAIL] %s %s%s", sn, d,
+                        if (!is.null(last_err)) paste0("  <- ", last_err) else ""))
         next
       }
       df <- records_to_df(recs, sn)

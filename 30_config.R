@@ -10,8 +10,12 @@ if (!dir.exists(PIPE_DIR)) PIPE_DIR <- "."
 DB_PATH        <- file.path(PIPE_DIR, "data", "sunset.duckdb")
 EXPORT_DIR     <- file.path(PIPE_DIR, "data", "export")
 LOG_DIR        <- file.path(PIPE_DIR, "logs")
-SITES_CSV      <- "/Users/chrislim/Documents/TASK/SUNSET/figures/sensor_sites_clean.csv"
-CURVES_CSV     <- "/Users/chrislim/Documents/TASK/Quant/SUNSET_calibration_curves_for_Kylie.csv"
+# Calibration curves are VENDORED into the repo, not referenced on a laptop.
+# An absolute path here broke the first CI run: the runner has no
+# /Users/chrislim. Anything the pipeline reads must live in the repo, or this
+# stops being portable — which is the whole point of running it in CI.
+# Source of record: Quant/CALIBRATION_FINAL.md (copied to config/ alongside).
+CURVES_CSV     <- file.path(PIPE_DIR, "config", "calibration_curves.csv")
 
 # ---- Sensors ----------------------------------------------------------------
 # The 20 MODULAIR units of the Pima County DEQ x UA school network.
