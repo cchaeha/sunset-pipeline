@@ -46,9 +46,14 @@ jobs:
           key: ${{ runner.os }}-r-${{ hashFiles('.github/workflows/pipeline.yml') }}
 
       - name: Install R packages
+        # GITHUB_PAT matters: QuantAQAPIClient is not on CRAN, and without a
+        # token `remotes` falls back to a shared bundled PAT that is routinely
+        # rate-limited — the first run here failed exactly that way with
+        # "cannot open URL .../r-quantaq/contents/DESCRIPTION".
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           install.packages(c("DBI", "duckdb", "remotes"))
-          # QuantAQAPIClient is not on CRAN
           remotes::install_github("quant-aq/r-quantaq", upgrade = "never")
         shell: Rscript {0}
 
