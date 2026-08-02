@@ -1,0 +1,14 @@
+# Working DuckDB store — a CACHE, not the source of truth. Rebuildable from
+# archive/ plus the API, and it would otherwise add ~1.4 GB/year of binary churn.
+data/sunset.duckdb
+data/sunset.duckdb.wal
+data/tmp/
+
+# Generated artifacts. Published to the gh-pages branch by CI, never committed
+# to main, so the 20-minute refresh cadence creates no history.
+data/export/
+
+logs/
+.Rhistory
+.RData
+.DS_Store

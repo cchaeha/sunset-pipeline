@@ -1,0 +1,109 @@
+name: SUNSET ingest
+
+# Runs the ingest pipeline on GitHub's infrastructure rather than any laptop or
+# campus server. That is deliberate: this project has to survive an
+# institutional move and a possible handover to Pima County DEQ, so nothing in
+# the chain should depend on one person's machine or one university's account.
+#
+# Public repo => unlimited Actions minutes. A private repo gets 2,000/month and
+# this schedule needs roughly 2,900, so keep it public (the data is already on a
+# public dashboard).
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'      # every 20 minutes
+  workflow_dispatch:             # manual "Run workflow" button
+    inputs:
+      days:
+        description: 'Days to re-pull (widen to repair a gap)'
+        required: false
+        default: '3'
+
+concurrency:
+  group: sunset-ingest
+  cancel-in-progress: false      # never interrupt a run mid-write
+
+permissions:
+  contents: write                # commit the archive + push gh-pages
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true   # binary packages; source builds are far slower
+
+      - name: Cache R packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: ${{ runner.os }}-r-${{ hashFiles('.github/workflows/pipeline.yml') }}
+
+      - name: Install R packages
+        run: |
+          install.packages(c("DBI", "duckdb", "remotes"))
+          # QuantAQAPIClient is not on CRAN
+          remotes::install_github("quant-aq/r-quantaq", upgrade = "never")
+        shell: Rscript {0}
+
+      # The working DuckDB store is a CACHE, not the source of truth. If it is
+      # evicted the pipeline rebuilds from the committed Parquet archive and
+      # backfills the tail from the API, so losing it costs one slow run, not
+      # data. Never treat this cache as durable storage.
+      - name: Restore working store
+        uses: actions/cache/restore@v4
+        with:
+          path: data/sunset.duckdb
+          key: sunset-duckdb-${{ github.run_id }}
+          restore-keys: sunset-duckdb-
+
+      - name: Run pipeline
+        env:
+          QUANTAQ_API_KEY: ${{ secrets.QUANTAQ_API_KEY }}
+        run: Rscript 30_run_pipeline.R --days ${{ github.event.inputs.days || '3' }}
+
+      - name: Save working store
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/sunset.duckdb
+          key: sunset-duckdb-${{ github.run_id }}
+
+      # Durable history. Daily files are immutable once written, so this commits
+      # at most one new file per day and creates no churn.
+      - name: Commit new archive days
+        run: |
+          git config user.name  "sunset-pipeline"
+          git config user.email "actions@github.com"
+          git add archive/
+          if git diff --staged --quiet; then
+            echo "no new archive days"
+          else
+            git commit -m "archive: $(git diff --staged --name-only | wc -l | tr -d ' ') day(s) [skip ci]"
+            git push
+          fi
+
+      # Publish the small artifacts the dashboard reads. Force-pushed to a
+      # single-commit orphan branch so the frequently-replaced files never
+      # accumulate git history.
+      - name: Publish artifacts
+        run: |
+          cd data/export
+          git init -q
+          git config user.name  "sunset-pipeline"
+          git config user.email "actions@github.com"
+          git checkout -q -b gh-pages
+          git add -A
+          git commit -q -m "artifacts $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+
+      - name: Summary
+        run: |
+          echo "### SUNSET ingest" >> $GITHUB_STEP_SUMMARY
+          cat data/export/manifest.json >> $GITHUB_STEP_SUMMARY
