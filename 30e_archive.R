@@ -19,7 +19,8 @@ write_archive <- function(con, rewrite_today = FALSE) {
   dir.create(ARCHIVE_DIR, showWarnings = FALSE, recursive = TRUE)
 
   days <- DBI::dbGetQuery(con, "
-    SELECT CAST(timestamp AS DATE) AS d, count(*) AS n
+    SELECT CAST(timestamp AS DATE) AS d, count(*) AS n,
+           max(CAST(timestamp AS TIME)) AS last_time
     FROM sensor_data GROUP BY 1 ORDER BY 1")
   if (!nrow(days)) return(list(written = 0L, skipped = 0L))
 
@@ -31,10 +32,32 @@ write_archive <- function(con, rewrite_today = FALSE) {
     # partial day would produce a file that is immutable but wrong.
     if (d >= today && !rewrite_today) { skipped <- skipped + 1L; next }
 
+    # A day is only "complete" if the store actually holds data to the END of
+    # it. Without this check a machine that stopped ingesting mid-afternoon
+    # freezes a truncated day as authoritative. Observed 2026-08-03: this
+    # laptop wrote 2026-08-02 with 18,600 rows ending 16:21 while the real day
+    # had 27,309 rows ending 23:59 — 8 hours would have been lost permanently
+    # had CI not written the same day independently.
+    if (is.na(days$last_time[i]) || as.character(days$last_time[i]) < "23:00:00") {
+      message(sprintf("   skipping %s: store only reaches %s, day looks incomplete",
+                      format(d, "%Y-%m-%d"), days$last_time[i]))
+      skipped <- skipped + 1L; next
+    }
+
     yr  <- format(d, "%Y")
     out <- file.path(ARCHIVE_DIR, yr, sprintf("%s.parquet", format(d, "%Y-%m-%d")))
     dir.create(dirname(out), showWarnings = FALSE, recursive = TRUE)
-    if (file.exists(out)) { skipped <- skipped + 1L; next }
+
+    # Self-correcting: if an existing file has FEWER rows than the store now
+    # holds for that day, it was written from incomplete data — replace it.
+    if (file.exists(out)) {
+      have <- tryCatch(DBI::dbGetQuery(con, sprintf(
+        "SELECT count(*) AS n FROM read_parquet('%s')", out))$n, error = function(e) NA_integer_)
+      if (!is.na(have) && have >= days$n[i]) { skipped <- skipped + 1L; next }
+      message(sprintf("   replacing %s: file has %s rows, store has %s",
+                      format(d, "%Y-%m-%d"), format(have, big.mark = ","),
+                      format(days$n[i], big.mark = ",")))
+    }
 
     DBI::dbExecute(con, sprintf("
       COPY (SELECT * FROM sensor_data WHERE CAST(timestamp AS DATE) = DATE '%s'
