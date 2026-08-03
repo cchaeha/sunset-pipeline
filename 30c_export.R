@@ -20,7 +20,8 @@ export_artifacts <- function(con) {
       FROM sensor_data
       WHERE timestamp >= CAST(now() AS TIMESTAMP) - INTERVAL 12 HOUR
     )
-    SELECT sn, timestamp, geo_lat, geo_lon, pm1, pm25, pm10, o3, co, no2, rh, temp
+    SELECT sn, strftime(timestamp, '%Y-%m-%d %H:%M:%S') AS timestamp,
+           geo_lat, geo_lon, pm1, pm25, pm10, o3, co, no2, rh, temp
     FROM ranked WHERE rn = 1 ORDER BY sn")
   write.csv(latest, file.path(EXPORT_DIR, "latest.csv"), row.names = FALSE)
 
@@ -30,12 +31,20 @@ export_artifacts <- function(con) {
 
   # 3. hourly_30d.csv — the real history the app has never had.
   hourly <- DBI::dbGetQuery(con, "
-    SELECT sn, hour_utc, pm25, pm25_cal, pm10, pm1, o3, o3_cal, co, no2, rh, temp,
+    SELECT sn, strftime(hour_utc, '%Y-%m-%d %H:%M:%S') AS hour_utc,
+           pm25, pm25_cal, pm10, pm1, o3, o3_cal, co, no2, rh, temp,
            n_obs, pm_status, hour_complete
     FROM sensor_hourly
     WHERE hour_utc >= CAST(now() AS TIMESTAMP) - INTERVAL 30 DAY
     ORDER BY sn, hour_utc")
   write.csv(hourly, file.path(EXPORT_DIR, "hourly_30d.csv"), row.names = FALSE)
+
+  # TIMESTAMPS ARE FORMATTED IN SQL, NOT LEFT TO write.csv. R's write.csv omits
+  # the time component when a POSIXct falls on exact midnight, and a SINGLE such
+  # row is enough to make as.POSIXct() infer a date-only format and silently
+  # truncate EVERY timestamp in the file to 00:00:00. Observed 2026-08-03: 1 row
+  # in 126,610 destroyed all time-of-day information in the published feed.
+  # strftime() guarantees a full timestamp on every row.
 
   # 4. app_feed.csv.gz — 1-minute records in EXACTLY the schema the Shiny app's
   #    fetch_sensor_data() returns, so the app can swap its data source without
@@ -43,8 +52,8 @@ export_artifacts <- function(con) {
   #    Retention is capped so the artifact cannot grow without bound; 8 days
   #    covers the UI's longest window (7 days) with a margin.
   feed <- DBI::dbGetQuery(con, "
-    SELECT sn, timestamp, geo_lat, geo_lon, co, no, no2, o3, pm1, pm10, pm25,
-           rh, temp
+    SELECT sn, strftime(timestamp, '%Y-%m-%d %H:%M:%S') AS timestamp,
+           geo_lat, geo_lon, co, no, no2, o3, pm1, pm10, pm25, rh, temp
     FROM sensor_data
     WHERE timestamp >= CAST(now() AS TIMESTAMP) - INTERVAL 8 DAY
     ORDER BY sn, timestamp")
