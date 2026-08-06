@@ -51,6 +51,22 @@ export_artifacts <- function(con) {
   #    any change to downstream reactives. Includes the calibrated columns.
   #    Retention is capped so the artifact cannot grow without bound; 8 days
   #    covers the UI's longest window (7 days) with a margin.
+  # PARQUET is the primary format. It is smaller (2.1 vs 2.5 MB), reads in
+  # 0.01 s vs 0.26 s, and — the real reason — stores the timestamp TYPE rather
+  # than a string, so the midnight-truncation bug that silently flattened
+  # 126,610 timestamps on 2026-08-03 cannot occur at all. Removing a failure
+  # mode beats guarding against it.
+  DBI::dbExecute(con, sprintf("
+    COPY (SELECT sn, timestamp, geo_lat, geo_lon, co, no, no2, o3,
+                 pm1, pm10, pm25, rh, temp
+          FROM sensor_data
+          WHERE timestamp >= CAST(now() AS TIMESTAMP) - INTERVAL 8 DAY
+          ORDER BY sn, timestamp)
+    TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD)",
+    file.path(EXPORT_DIR, "app_feed.parquet")))
+
+  # csv.gz retained one release cycle so a client pinned to the old artifact
+  # does not break mid-transition. Drop once the app reads parquet in prod.
   feed <- DBI::dbGetQuery(con, "
     SELECT sn, strftime(timestamp, '%Y-%m-%d %H:%M:%S') AS timestamp,
            geo_lat, geo_lon, co, no, no2, o3, pm1, pm10, pm25, rh, temp
@@ -68,7 +84,7 @@ export_artifacts <- function(con) {
            count(*) AS n_records, count(DISTINCT sn) AS n_sensors
     FROM sensor_data")
   manifest <- sprintf(
-    '{\n  "generated_utc": "%s",\n  "n_records": %s,\n  "n_sensors": %s,\n  "first_obs": "%s",\n  "last_obs": "%s",\n  "calibration": "APPLIED: PM2.5 SIZEBINS + O3 baseline (v2026-06-30)",\n  "feed_rows": %s,\n  "artifacts": ["latest.csv","status.csv","hourly_30d.csv","app_feed.csv.gz"]\n}\n',
+    '{\n  "generated_utc": "%s",\n  "n_records": %s,\n  "n_sensors": %s,\n  "first_obs": "%s",\n  "last_obs": "%s",\n  "calibration": "APPLIED: PM2.5 SIZEBINS + O3 baseline (v2026-06-30)",\n  "feed_rows": %s,\n  "artifacts": ["latest.csv","status.csv","hourly_30d.csv","app_feed.parquet","app_feed.csv.gz"]\n}\n',
     format(as.POSIXct(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ"),
     span$n_records, span$n_sensors, span$first_obs, span$last_obs, nrow(feed))
   writeLines(manifest, file.path(EXPORT_DIR, "manifest.json"))
