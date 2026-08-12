@@ -48,5 +48,6 @@ EXPECT_PER_DAY <- 1440L
 OPC_THERMAL_C    <- 47.5
 STALE_HOURS      <- 3      # no record within this window => "offline"
 PM_PLAUSIBLE_MAX <- 1000   # ug/m3 guard
+WS_PLAUSIBLE_MAX <- 50     # m/s guard (~112 mph); above this is an instrument fault
 
 `%||%` <- function(a, b) if (is.null(a)) b else a

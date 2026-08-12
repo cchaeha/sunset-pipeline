@@ -17,10 +17,12 @@ PIPE_DIR <- dirname(normalizePath(sub("^--file=", "",
               grep("^--file=", commandArgs(FALSE), value = TRUE)[1])))
 source(file.path(PIPE_DIR, "30_config.R"))
 source(file.path(PIPE_DIR, "30a_ingest.R"))
+source(file.path(PIPE_DIR, "30a2_ingest_wind.R"))
 source(file.path(PIPE_DIR, "30b_qc.R"))
 source(file.path(PIPE_DIR, "30d_calibrate.R"))
 source(file.path(PIPE_DIR, "30e_archive.R"))
 source(file.path(PIPE_DIR, "30c_export.R"))
+source(file.path(PIPE_DIR, "30c2_export_wind.R"))
 
 args <- commandArgs(TRUE)
 if ("--days" %in% args) INGEST_DAYS <- as.integer(args[which(args == "--days") + 1])
@@ -56,6 +58,11 @@ if (ing$rows == 0 && ing$failures > 0)
 if (ing$failures > attempted / 2)
   warning(sprintf("ingest degraded: %d/%d sensor-days failed", ing$failures, attempted))
 
+message("-- ingest wind (", INGEST_DAYS, " days x ", length(SUNSET_SENSORS), " sensors)")
+ing_wind <- ingest_wind(con, days = INGEST_DAYS)
+message(sprintf("   wind rows upserted: %s   failed sensor-days: %d",
+                ing_wind$rows, ing_wind$failures))
+
 message("-- hourly + QC")
 qc <- build_hourly(con)
 print(qc)
@@ -75,6 +82,9 @@ ex <- export_artifacts(con)
 message(sprintf("   latest=%d  status=%d  hourly=%d", ex$latest, ex$status, ex$hourly))
 message(sprintf("   store span: %s .. %s  (%s records, %s sensors)",
                 ex$span$first_obs, ex$span$last_obs, ex$span$n_records, ex$span$n_sensors))
+
+ex_wind <- export_wind_artifact(con)
+message(sprintf("   wind=%d", ex_wind$wind))
 
 el <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
 message("== done in ", el, " min ==")
