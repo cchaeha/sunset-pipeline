@@ -1,0 +1,11 @@
+{
+  "generated_utc": "2026-08-22T20:58:32Z",
+  "n_records": 651240,
+  "n_sensors": 19,
+  "first_obs": "2026-07-30 00:00:07",
+  "last_obs": "2026-08-22 20:54:36",
+  "calibration": "APPLIED: PM2.5 SIZEBINS + O3 baseline (v2026-06-30)",
+  "feed_rows": 217869,
+  "artifacts": ["latest.csv","status.csv","hourly_30d.csv","app_feed.parquet","app_feed.csv.gz"]
+}
+
