@@ -84,7 +84,7 @@ message(sprintf("   store span: %s .. %s  (%s records, %s sensors)",
                 ex$span$first_obs, ex$span$last_obs, ex$span$n_records, ex$span$n_sensors))
 
 ex_wind <- export_wind_artifact(con)
-message(sprintf("   wind=%d", ex_wind$wind))
+message(sprintf("   wind=%d  wind_hours=%d", ex_wind$wind, ex_wind$wind_hours))
 
 el <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
 message("== done in ", el, " min ==")

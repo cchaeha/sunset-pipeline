@@ -77,6 +77,10 @@ export_artifacts <- function(con) {
   utils::write.csv(feed, gz, row.names = FALSE)
   close(gz)
 
+  # The two wind files are written by 30c2_export_wind.R, which runs after this
+  # step, so they are named here before they exist on disk. That is deliberate:
+  # wind_30d.parquet has been published and unlisted since 2026-08-12, and an
+  # artifact no manifest mentions is one a consumer has no way to discover.
   # 5. manifest.json — provenance, so a stale artifact is detectable rather
   #    than silently served.
   span <- DBI::dbGetQuery(con, "
@@ -84,7 +88,7 @@ export_artifacts <- function(con) {
            count(*) AS n_records, count(DISTINCT sn) AS n_sensors
     FROM sensor_data")
   manifest <- sprintf(
-    '{\n  "generated_utc": "%s",\n  "n_records": %s,\n  "n_sensors": %s,\n  "first_obs": "%s",\n  "last_obs": "%s",\n  "calibration": "APPLIED: PM2.5 SIZEBINS + O3 baseline (v2026-06-30)",\n  "feed_rows": %s,\n  "artifacts": ["latest.csv","status.csv","hourly_30d.csv","app_feed.parquet","app_feed.csv.gz"]\n}\n',
+    '{\n  "generated_utc": "%s",\n  "n_records": %s,\n  "n_sensors": %s,\n  "first_obs": "%s",\n  "last_obs": "%s",\n  "calibration": "APPLIED: PM2.5 SIZEBINS + O3 baseline (v2026-06-30)",\n  "feed_rows": %s,\n  "artifacts": ["latest.csv","status.csv","hourly_30d.csv","app_feed.parquet","app_feed.csv.gz","wind_30d.parquet","wind_hourly_30d.csv"]\n}\n',
     format(as.POSIXct(Sys.time(), tz = "UTC"), "%Y-%m-%dT%H:%M:%SZ"),
     span$n_records, span$n_sensors, span$first_obs, span$last_obs, nrow(feed))
   writeLines(manifest, file.path(EXPORT_DIR, "manifest.json"))
