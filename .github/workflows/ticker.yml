@@ -1,0 +1,54 @@
+name: SUNSET ticker
+
+# The clock for the ingest, because GitHub's scheduler is not one. The ingest's
+# */20 cron was delivered every 3-10 h in October 2026 (median 5.9 h over
+# 10/06-10/13, every run "success", so nothing alerted). The dashboard's
+# estimated PM AQI needs 75% of the last 24 h of minutes, so once the feed is
+# ~6 h behind every marker turns gray at once.
+#
+# This job dispatches pipeline.yml every 20 minutes, then dispatches a fresh
+# copy of itself before the 6 h job limit. GITHUB_TOKEN is allowed to trigger
+# workflow_dispatch, so there is no PAT and no outside scheduler to maintain.
+# The throttled cron below only restarts the chain if it ever breaks; the
+# concurrency group keeps a single ticker alive.
+#
+# Public repo => the idle minutes are free. Do NOT copy this to a private repo
+# (e.g. airsmart-pipeline): there every sleeping minute is billed.
+#
+# To stop it: gh workflow disable ticker.yml -R cchaeha/sunset-pipeline
+# (cancelling a run also ends the chain; only a normal finish hands off).
+
+on:
+  schedule:
+    - cron: '13 */3 * * *'      # restarts the chain if it breaks
+  workflow_dispatch:
+
+concurrency:
+  group: sunset-ticker
+  cancel-in-progress: false     # a queued restart waits; it never kills the live ticker
+
+permissions:
+  actions: write                # dispatch pipeline.yml and this workflow
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350        # the loop ends by ~5 h 20 min, well inside this
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Dispatch the ingest every 20 minutes for 5 hours
+        run: |
+          end=$(( $(date +%s) + 5 * 3600 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            gh workflow run pipeline.yml --ref main ||
+              echo "::warning::ingest dispatch failed; retrying next tick"
+            sleep 1200
+          done
+
+      - name: Hand off to a fresh ticker
+        if: ${{ !cancelled() }}
+        run: gh workflow run ticker.yml --ref main
