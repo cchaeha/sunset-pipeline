@@ -77,6 +77,12 @@ jobs:
           QUANTAQ_API_KEY: ${{ secrets.QUANTAQ_API_KEY }}
         run: Rscript 30_run_pipeline.R --days ${{ github.event.inputs.days || '3' }}
 
+      # Additive public JSON for the React pilot. Its failure must not prevent
+      # the existing dashboard feeds and durable archive from publishing.
+      - name: Export React pilot snapshot
+        continue-on-error: true
+        run: Rscript science/export_snapshot.R
+
       - name: Save working store
         uses: actions/cache/save@v4
         if: always()
